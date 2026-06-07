@@ -42,6 +42,10 @@ import {
 } from "@calcom/web/modules/embed/components/EventTypeEmbed";
 import { EventTypeDescription } from "@calcom/web/modules/event-types/components";
 import {
+  BookingLimitBadge,
+  BookingLimitMenuItem,
+} from "@calcom/web/modules/event-types/components/BookingLimitControls";
+import {
   CreateEventTypeDialog,
   type ProfileOption,
 } from "@calcom/web/modules/event-types/components/CreateEventTypeDialog";
@@ -308,22 +312,22 @@ export const InfiniteEventTypeList = ({
     },
   });
 
+  const getEventTypesFromGroupQueryKey = {
+    limit: LIMIT,
+    searchQuery: debouncedSearchTerm,
+    group: { teamId: group?.teamId, parentId: group?.parentId },
+  };
+
   const setHiddenMutation = trpc.viewer.eventTypesHeavy.update.useMutation({
     onMutate: async (data: { id: number; hidden?: boolean }) => {
       await utils.viewer.eventTypes.getEventTypesFromGroup.cancel();
-      const previousValue = utils.viewer.eventTypes.getEventTypesFromGroup.getInfiniteData({
-        limit: LIMIT,
-        searchQuery: debouncedSearchTerm,
-        group: { teamId: group?.teamId, parentId: group?.parentId },
-      });
+      const previousValue = utils.viewer.eventTypes.getEventTypesFromGroup.getInfiniteData(
+        getEventTypesFromGroupQueryKey
+      );
 
       if (previousValue) {
         await utils.viewer.eventTypes.getEventTypesFromGroup.setInfiniteData(
-          {
-            limit: LIMIT,
-            searchQuery: debouncedSearchTerm,
-            group: { teamId: group?.teamId, parentId: group?.parentId },
-          },
+          getEventTypesFromGroupQueryKey,
           (oldData) => {
             if (!oldData) {
               return {
@@ -349,11 +353,54 @@ export const InfiniteEventTypeList = ({
     onError: async (err, _, context) => {
       if (context?.previousValue) {
         utils.viewer.eventTypes.getEventTypesFromGroup.setInfiniteData(
-          {
-            limit: LIMIT,
-            searchQuery: debouncedSearchTerm,
-            group: { teamId: group?.teamId, parentId: group?.parentId },
-          },
+          getEventTypesFromGroupQueryKey,
+          () => context.previousValue
+        );
+      }
+      console.error(err.message);
+    },
+  });
+
+  const setBookingLimitMutation = trpc.viewer.eventTypesHeavy.update.useMutation({
+    onMutate: async (data) => {
+      if (data.metadata === undefined) {
+        return { previousValue: undefined };
+      }
+
+      await utils.viewer.eventTypes.getEventTypesFromGroup.cancel();
+      const previousValue = utils.viewer.eventTypes.getEventTypesFromGroup.getInfiniteData(
+        getEventTypesFromGroupQueryKey
+      );
+
+      if (previousValue) {
+        await utils.viewer.eventTypes.getEventTypesFromGroup.setInfiniteData(
+          getEventTypesFromGroupQueryKey,
+          (oldData) => {
+            if (!oldData) {
+              return {
+                pages: [],
+                pageParams: [],
+              };
+            }
+            return {
+              ...oldData,
+              pages: oldData.pages.map((page) => ({
+                ...page,
+                eventTypes: page.eventTypes.map((eventType) =>
+                  eventType.id === data.id ? { ...eventType, metadata: data.metadata ?? null } : eventType
+                ),
+              })),
+            };
+          }
+        );
+      }
+
+      return { previousValue };
+    },
+    onError: async (err, _, context) => {
+      if (context?.previousValue) {
+        utils.viewer.eventTypes.getEventTypesFromGroup.setInfiniteData(
+          getEventTypesFromGroupQueryKey,
           () => context.previousValue
         );
       }
@@ -555,6 +602,17 @@ export const InfiniteEventTypeList = ({
             const isChildrenManagedEventType =
               type.metadata?.managedEventConfig !== undefined &&
               type.schedulingType !== SchedulingType.MANAGED;
+            const confirmedBookingCount = type.confirmedBookingCount ?? 0;
+            const maxBookingsBeforeAutoHide = type.metadata?.maxBookingsBeforeAutoHide;
+            const handleBookingLimitChange = (newLimit: number | null) => {
+              setBookingLimitMutation.mutate({
+                id: type.id,
+                metadata: {
+                  ...(type.metadata ?? {}),
+                  maxBookingsBeforeAutoHide: newLimit,
+                },
+              });
+            };
             return (
               <li key={type.id}>
                 <div className="flex w-full items-center justify-between transition hover:bg-cal-muted">
@@ -596,6 +654,10 @@ export const InfiniteEventTypeList = ({
                         <div className="flex items-center justify-between space-x-2 rtl:space-x-reverse">
                           {!isManagedEventType && (
                             <>
+                              <BookingLimitBadge
+                                maxBookingsBeforeAutoHide={maxBookingsBeforeAutoHide}
+                                confirmedBookingCount={confirmedBookingCount}
+                              />
                               {type.hidden && <span className="text-gray-400 text-sm">{t("hidden")}</span>}
                               <Tooltip
                                 content={
@@ -701,6 +763,14 @@ export const InfiniteEventTypeList = ({
                                       {t("duplicate")}
                                     </DropdownItem>
                                   </DropdownMenuItem>
+                                )}
+                                {!readOnly && !isManagedEventType && !isChildrenManagedEventType && (
+                                  <BookingLimitMenuItem
+                                    maxBookingsBeforeAutoHide={maxBookingsBeforeAutoHide}
+                                    confirmedBookingCount={confirmedBookingCount}
+                                    disabled={lockedByOrg || setBookingLimitMutation.isPending}
+                                    onLimitChange={handleBookingLimitChange}
+                                  />
                                 )}
                                 {!isManagedEventType && (
                                   <DropdownMenuItem className="outline-none">
@@ -816,6 +886,14 @@ export const InfiniteEventTypeList = ({
                               </DropdownItem>
                             </DropdownMenuItem>
                           )}
+                          {!readOnly && !isManagedEventType && !isChildrenManagedEventType && (
+                            <BookingLimitMenuItem
+                              maxBookingsBeforeAutoHide={maxBookingsBeforeAutoHide}
+                              confirmedBookingCount={confirmedBookingCount}
+                              disabled={lockedByOrg || setBookingLimitMutation.isPending}
+                              onLimitChange={handleBookingLimitChange}
+                            />
+                          )}
                           {/* readonly is only set when we are on a team - if we are on a user event type null will be the value. */}
                           {!readOnly && !isChildrenManagedEventType && (
                             <DropdownMenuItem className="outline-none">
@@ -833,6 +911,14 @@ export const InfiniteEventTypeList = ({
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuSeparator />
+                          {!isManagedEventType && (
+                            <div className="flex items-center px-4 py-2">
+                              <BookingLimitBadge
+                                maxBookingsBeforeAutoHide={maxBookingsBeforeAutoHide}
+                                confirmedBookingCount={confirmedBookingCount}
+                              />
+                            </div>
+                          )}
                           {!isManagedEventType && (
                             <div className="flex h-9 cursor-pointer flex-row items-center justify-between rounded-b-lg px-4 py-2 transition hover:bg-subtle">
                               <Skeleton
@@ -930,9 +1016,7 @@ const CTA = ({ profileOptions }: { profileOptions: ProfileOption[] }) => {
         }}
         placeholder={t("search")}
       />
-      <Button
-        data-testid="new-event-type"
-        href={`?dialog=new&eventPage=${profileOptions[0]?.slug ?? ""}`}>
+      <Button data-testid="new-event-type" href={`?dialog=new&eventPage=${profileOptions[0]?.slug ?? ""}`}>
         {t("new")}
       </Button>
       <CreateEventTypeDialog profileOptions={profileOptions} />

@@ -1,3 +1,4 @@
+import { getConfirmedBookingCountsByEventTypeIds } from "@calcom/features/eventtypes/lib/getConfirmedBookingCountsByEventTypeIds";
 import logger from "@calcom/lib/logger";
 import { markdownToSafeHTML } from "@calcom/lib/markdownToSafeHTML";
 import prisma from "@calcom/prisma";
@@ -14,7 +15,35 @@ export async function getEventTypesPublic(userId: number) {
 
   const eventTypesRaw = eventTypesWithHidden.filter((evt) => !evt.hidden);
 
-  return eventTypesRaw.map((eventType) => ({
+  const eventTypeIdsWithBookingLimit = eventTypesRaw
+    .filter((evt) => {
+      const parsedMetadata = EventTypeMetaDataSchema.safeParse(evt.metadata);
+      return (
+        parsedMetadata.success &&
+        parsedMetadata.data?.maxBookingsBeforeAutoHide != null &&
+        parsedMetadata.data.maxBookingsBeforeAutoHide > 0
+      );
+    })
+    .map((evt) => evt.id);
+
+  const confirmedBookingCounts = await getConfirmedBookingCountsByEventTypeIds(eventTypeIdsWithBookingLimit);
+
+  const eventTypesVisible = eventTypesRaw.filter((evt) => {
+    const parsedMetadata = EventTypeMetaDataSchema.safeParse(evt.metadata);
+    if (!parsedMetadata.success) {
+      return false;
+    }
+
+    const maxBookingsBeforeAutoHide = parsedMetadata.data?.maxBookingsBeforeAutoHide;
+    if (maxBookingsBeforeAutoHide == null || maxBookingsBeforeAutoHide <= 0) {
+      return true;
+    }
+
+    const confirmedCount = confirmedBookingCounts[evt.id] ?? 0;
+    return confirmedCount < maxBookingsBeforeAutoHide;
+  });
+
+  return eventTypesVisible.map((eventType) => ({
     ...eventType,
     metadata: EventTypeMetaDataSchema.parse(eventType.metadata || {}),
     descriptionAsSafeHTML: markdownToSafeHTML(eventType.description),

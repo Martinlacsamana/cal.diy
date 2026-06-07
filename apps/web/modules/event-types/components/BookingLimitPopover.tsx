@@ -8,7 +8,7 @@ import { Popover, PopoverContent } from "@calcom/ui/components/popover";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import * as RadioGroup from "@radix-ui/react-radio-group";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type BookingLimitMode = "none" | "limited";
 
@@ -32,6 +32,18 @@ export function BookingLimitPopover({
   const { t } = useLocale();
   const [mode, setMode] = useState<BookingLimitMode>(currentLimit ? "limited" : "none");
   const [limitValue, setLimitValue] = useState(currentLimit?.toString() ?? "1");
+  const ignoreCloseRef = useRef(false);
+
+  useEffect(() => {
+    if (open) {
+      ignoreCloseRef.current = true;
+      const timeoutId = window.setTimeout(() => {
+        ignoreCloseRef.current = false;
+      }, 100);
+
+      return () => window.clearTimeout(timeoutId);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (open) {
@@ -59,6 +71,10 @@ export function BookingLimitPopover({
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && ignoreCloseRef.current) {
+      return;
+    }
+
     if (!nextOpen && open) {
       const nextLimit = getLimitToSave();
       const hasChanged = (currentLimit ?? null) !== nextLimit;
@@ -72,9 +88,11 @@ export function BookingLimitPopover({
   };
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverPrimitive.Anchor asChild>{anchor}</PopoverPrimitive.Anchor>
-      <PopoverContent className="w-80 space-y-4" align="end" side="left">
+    <Popover modal open={open} onOpenChange={handleOpenChange}>
+      <PopoverPrimitive.Anchor asChild>
+        <span className="inline-flex">{anchor}</span>
+      </PopoverPrimitive.Anchor>
+      <PopoverContent className="z-[60] w-80 space-y-4" align="end" side="left">
         <RadioGroup.Root
           value={mode}
           onValueChange={(value) => setMode(value as BookingLimitMode)}

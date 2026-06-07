@@ -399,9 +399,7 @@ export const InfiniteEventTypeList = ({
               pages: oldData.pages.map((page) => ({
                 ...page,
                 eventTypes: page.eventTypes.map((eventType) =>
-                  eventType.id === data.id
-                    ? { ...eventType, metadata: data.metadata ?? null }
-                    : eventType
+                  eventType.id === data.id ? { ...eventType, metadata: data.metadata ?? null } : eventType
                 ),
               })),
             };
@@ -803,12 +801,15 @@ export const InfiniteEventTypeList = ({
                                       </DropdownMenuItem>
                                     )}
                                     {!readOnly && !isManagedEventType && !isChildrenManagedEventType && (
-                                      <DropdownMenuItem className="outline-none">
-                                        <DropdownItem
-                                          type="button"
-                                          data-testid={`event-type-booking-limit-${type.id}`}
-                                          StartIcon="calendar"
-                                          onClick={() => setBookingLimitOpenEventTypeId(type.id)}>
+                                      <DropdownMenuItem
+                                        className="outline-none"
+                                        data-testid={`event-type-booking-limit-${type.id}`}
+                                        onSelect={() => {
+                                          window.setTimeout(() => {
+                                            setBookingLimitOpenEventTypeId(type.id);
+                                          }, 0);
+                                        }}>
+                                        <DropdownItem type="button" StartIcon="calendar">
                                           {t("booking_limit")}
                                         </DropdownItem>
                                       </DropdownMenuItem>
@@ -937,11 +938,15 @@ export const InfiniteEventTypeList = ({
                                 </DropdownMenuItem>
                               )}
                               {!readOnly && !isManagedEventType && !isChildrenManagedEventType && (
-                                <DropdownMenuItem className="outline-none">
-                                  <DropdownItem
-                                    onClick={() => setBookingLimitOpenEventTypeId(type.id)}
-                                    StartIcon="calendar"
-                                    data-testid={`event-type-booking-limit-${type.id}`}>
+                                <DropdownMenuItem
+                                  className="outline-none"
+                                  data-testid={`event-type-booking-limit-${type.id}`}
+                                  onSelect={() => {
+                                    window.setTimeout(() => {
+                                      setBookingLimitOpenEventTypeId(type.id);
+                                    }, 0);
+                                  }}>
+                                  <DropdownItem type="button" StartIcon="calendar">
                                     {t("booking_limit")}
                                   </DropdownItem>
                                 </DropdownMenuItem>

@@ -1,3 +1,4 @@
+import { getConfirmedBookingCountsByEventTypeIds } from "@calcom/features/eventtypes/lib/getConfirmedBookingCounts";
 import { EventTypeRepository } from "@calcom/features/eventtypes/repositories/eventTypeRepository";
 import { hasFilter } from "@calcom/features/filters/lib/hasFilter";
 import { checkRateLimitAndThrowError } from "@calcom/lib/checkRateLimitAndThrowError";
@@ -164,9 +165,12 @@ export const getEventTypesFromGroup = async ({
   });
   const eventTypeIdsWhereUserIsHost = new Set(userHostEntries.map((h) => h.eventTypeId));
 
+  const confirmedBookingCounts = await getConfirmedBookingCountsByEventTypeIds(eventTypeIds);
+
   const eventTypesWithHostFlag = mappedEventTypes.map((eventType) => ({
     ...eventType,
     isCurrentUserHost: eventTypeIdsWhereUserIsHost.has(eventType.id),
+    confirmedBookingCount: confirmedBookingCounts.get(eventType.id) ?? 0,
   }));
 
   const membership = await prisma.membership.findFirst({

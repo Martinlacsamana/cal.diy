@@ -4,6 +4,7 @@ import prisma from "@calcom/prisma";
 import type { Prisma } from "@calcom/prisma/client";
 import type { baseEventTypeSelect } from "@calcom/prisma/selects";
 import { EventTypeMetaDataSchema } from "@calcom/prisma/zod-utils";
+import { getConfirmedBookingCountsByEventTypeIds } from "./getConfirmedBookingCounts";
 
 const log = logger.getSubLogger({ prefix: ["getEventTypesPublic"] });
 
@@ -12,7 +13,36 @@ export type EventTypesPublic = Awaited<ReturnType<typeof getEventTypesPublic>>;
 export async function getEventTypesPublic(userId: number) {
   const eventTypesWithHidden = await getEventTypesWithHiddenFromDB(userId);
 
-  const eventTypesRaw = eventTypesWithHidden.filter((evt) => !evt.hidden);
+  const visibleEventTypes = eventTypesWithHidden.filter((evt) => !evt.hidden);
+
+  const eventTypesWithAutoHideLimit = visibleEventTypes.filter((evt) => {
+    const metadata = EventTypeMetaDataSchema.parse(evt.metadata || {});
+    return metadata?.maxBookingsBeforeAutoHide != null;
+  });
+
+  const limitReachedIds = new Set<number>();
+
+  if (eventTypesWithAutoHideLimit.length > 0) {
+    const confirmedCounts = await getConfirmedBookingCountsByEventTypeIds(
+      eventTypesWithAutoHideLimit.map((evt) => evt.id)
+    );
+
+    for (const eventType of eventTypesWithAutoHideLimit) {
+      const metadata = EventTypeMetaDataSchema.parse(eventType.metadata || {});
+      const limit = metadata?.maxBookingsBeforeAutoHide;
+
+      if (limit == null) {
+        continue;
+      }
+
+      const confirmedCount = confirmedCounts.get(eventType.id) ?? 0;
+      if (confirmedCount >= limit) {
+        limitReachedIds.add(eventType.id);
+      }
+    }
+  }
+
+  const eventTypesRaw = visibleEventTypes.filter((evt) => !limitReachedIds.has(evt.id));
 
   return eventTypesRaw.map((eventType) => ({
     ...eventType,

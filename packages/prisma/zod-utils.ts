@@ -184,6 +184,7 @@ const _eventTypeMetaDataSchemaWithoutApps = z.object({
     })
     .optional(),
   bookerLayouts: bookerLayouts.optional(),
+  maxBookingsBeforeAutoHide: z.number().int().min(1).nullable().optional(),
 });
 
 export const eventTypeMetaDataSchemaWithUntypedApps = _eventTypeMetaDataSchemaWithoutApps.merge(

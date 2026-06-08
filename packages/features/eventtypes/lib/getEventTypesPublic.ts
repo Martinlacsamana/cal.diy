@@ -1,3 +1,4 @@
+import { getConfirmedBookingCountsByEventTypeIds } from "@calcom/features/eventtypes/lib/getConfirmedBookingCountsByEventTypeIds";
 import logger from "@calcom/lib/logger";
 import { markdownToSafeHTML } from "@calcom/lib/markdownToSafeHTML";
 import prisma from "@calcom/prisma";
@@ -12,7 +13,26 @@ export type EventTypesPublic = Awaited<ReturnType<typeof getEventTypesPublic>>;
 export async function getEventTypesPublic(userId: number) {
   const eventTypesWithHidden = await getEventTypesWithHiddenFromDB(userId);
 
-  const eventTypesRaw = eventTypesWithHidden.filter((evt) => !evt.hidden);
+  const eventTypesNotHidden = eventTypesWithHidden.filter((evt) => !evt.hidden);
+
+  const eventTypeIdsWithLimit = eventTypesNotHidden
+    .filter((evt) => {
+      const limit = evt.metadata?.maxBookingsBeforeAutoHide;
+      return typeof limit === "number" && limit > 0;
+    })
+    .map((evt) => evt.id);
+
+  const confirmedCounts = await getConfirmedBookingCountsByEventTypeIds(eventTypeIdsWithLimit);
+
+  const eventTypesRaw = eventTypesNotHidden.filter((evt) => {
+    const limit = evt.metadata?.maxBookingsBeforeAutoHide;
+    if (typeof limit !== "number" || limit <= 0) {
+      return true;
+    }
+
+    const confirmedCount = confirmedCounts[evt.id] ?? 0;
+    return confirmedCount < limit;
+  });
 
   return eventTypesRaw.map((eventType) => ({
     ...eventType,

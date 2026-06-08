@@ -42,6 +42,10 @@ import {
 } from "@calcom/web/modules/embed/components/EventTypeEmbed";
 import { EventTypeDescription } from "@calcom/web/modules/event-types/components";
 import {
+  BookingLimitBadge,
+  BookingLimitMenuItem,
+} from "@calcom/web/modules/event-types/components/BookingLimitControls";
+import {
   CreateEventTypeDialog,
   type ProfileOption,
 } from "@calcom/web/modules/event-types/components/CreateEventTypeDialog";
@@ -361,6 +365,61 @@ export const InfiniteEventTypeList = ({
     },
   });
 
+  const setBookingLimitMutation = trpc.viewer.eventTypesHeavy.update.useMutation({
+    onMutate: async (data) => {
+      if (data.metadata === undefined) return { previousValue: undefined };
+      const metadata = data.metadata;
+      await utils.viewer.eventTypes.getEventTypesFromGroup.cancel();
+      const previousValue = utils.viewer.eventTypes.getEventTypesFromGroup.getInfiniteData({
+        limit: LIMIT,
+        searchQuery: debouncedSearchTerm,
+        group: { teamId: group?.teamId, parentId: group?.parentId },
+      });
+
+      if (previousValue) {
+        await utils.viewer.eventTypes.getEventTypesFromGroup.setInfiniteData(
+          {
+            limit: LIMIT,
+            searchQuery: debouncedSearchTerm,
+            group: { teamId: group?.teamId, parentId: group?.parentId },
+          },
+          (oldData) => {
+            if (!oldData) {
+              return {
+                pages: [],
+                pageParams: [],
+              };
+            }
+            return {
+              ...oldData,
+              pages: oldData.pages.map((page) => ({
+                ...page,
+                eventTypes: page.eventTypes.map((eventType) =>
+                  eventType.id === data.id ? { ...eventType, metadata } : eventType
+                ),
+              })),
+            };
+          }
+        );
+      }
+
+      return { previousValue };
+    },
+    onError: async (err, _, context) => {
+      if (context?.previousValue) {
+        utils.viewer.eventTypes.getEventTypesFromGroup.setInfiniteData(
+          {
+            limit: LIMIT,
+            searchQuery: debouncedSearchTerm,
+            group: { teamId: group?.teamId, parentId: group?.parentId },
+          },
+          () => context.previousValue
+        );
+      }
+      console.error(err.message);
+    },
+  });
+
   async function moveEventType(index: number, increment: 1 | -1): Promise<void> {
     if (!pages) return;
     const newOrder = pages;
@@ -436,6 +495,16 @@ export const InfiniteEventTypeList = ({
     setParamsIfDefined("length", eventType.length);
     setParamsIfDefined("pageSlug", group.profile.slug);
     router.push(`${pathname}?${newSearchParams.toString()}`);
+  };
+
+  const updateBookingLimit = (eventType: InfiniteEventType, limit: number | null): void => {
+    setBookingLimitMutation.mutate({
+      id: eventType.id,
+      metadata: {
+        ...(eventType.metadata ?? {}),
+        maxBookingsBeforeAutoHide: limit,
+      },
+    });
   };
 
   const deleteMutation = trpc.viewer.eventTypes.delete.useMutation({
@@ -597,6 +666,10 @@ export const InfiniteEventTypeList = ({
                           {!isManagedEventType && (
                             <>
                               {type.hidden && <span className="text-gray-400 text-sm">{t("hidden")}</span>}
+                              <BookingLimitBadge
+                                limit={type.metadata?.maxBookingsBeforeAutoHide}
+                                confirmedCount={type.confirmedBookingCount ?? 0}
+                              />
                               <Tooltip
                                 content={
                                   type.hidden ? t("show_eventtype_on_profile") : t("hide_from_profile")
@@ -701,6 +774,13 @@ export const InfiniteEventTypeList = ({
                                       {t("duplicate")}
                                     </DropdownItem>
                                   </DropdownMenuItem>
+                                )}
+                                {!readOnly && !isManagedEventType && !isChildrenManagedEventType && (
+                                  <BookingLimitMenuItem
+                                    limit={type.metadata?.maxBookingsBeforeAutoHide}
+                                    disabled={setBookingLimitMutation.isPending}
+                                    onLimitChange={(limit) => updateBookingLimit(type, limit)}
+                                  />
                                 )}
                                 {!isManagedEventType && (
                                   <DropdownMenuItem className="outline-none">
@@ -816,6 +896,13 @@ export const InfiniteEventTypeList = ({
                               </DropdownItem>
                             </DropdownMenuItem>
                           )}
+                          {!readOnly && !isManagedEventType && !isChildrenManagedEventType && (
+                            <BookingLimitMenuItem
+                              limit={type.metadata?.maxBookingsBeforeAutoHide}
+                              disabled={setBookingLimitMutation.isPending}
+                              onLimitChange={(limit) => updateBookingLimit(type, limit)}
+                            />
+                          )}
                           {/* readonly is only set when we are on a team - if we are on a user event type null will be the value. */}
                           {!readOnly && !isChildrenManagedEventType && (
                             <DropdownMenuItem className="outline-none">
@@ -930,9 +1017,7 @@ const CTA = ({ profileOptions }: { profileOptions: ProfileOption[] }) => {
         }}
         placeholder={t("search")}
       />
-      <Button
-        data-testid="new-event-type"
-        href={`?dialog=new&eventPage=${profileOptions[0]?.slug ?? ""}`}>
+      <Button data-testid="new-event-type" href={`?dialog=new&eventPage=${profileOptions[0]?.slug ?? ""}`}>
         {t("new")}
       </Button>
       <CreateEventTypeDialog profileOptions={profileOptions} />

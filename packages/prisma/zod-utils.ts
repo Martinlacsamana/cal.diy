@@ -148,6 +148,7 @@ const _eventTypeMetaDataSchemaWithoutApps = z.object({
   blockchainId: z.number().optional(),
   multipleDuration: z.number().array().optional(),
   hideDurationSelectorInBookingPage: z.boolean().optional(),
+  maxBookingsBeforeAutoHide: z.number().int().min(1).nullable().optional(),
   giphyThankYouPage: z.string().optional(),
   additionalNotesRequired: z.boolean().optional(),
   disableSuccessPage: z.boolean().optional(),
